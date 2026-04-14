@@ -24,6 +24,9 @@ class GitHubVisualizer {
     bindEvents() {
         const searchBtn = document.getElementById('searchBtn');
         const usernameInput = document.getElementById('usernameInput');
+        const followersCard = document.getElementById('followersCard');
+        const closeFollowersModal = document.getElementById('closeFollowersModal');
+        const backToProfile = document.getElementById('backToProfile');
 
         if (searchBtn) {
             searchBtn.addEventListener('click', () => this.search());
@@ -34,6 +37,26 @@ class GitHubVisualizer {
                 if (e.key === 'Enter') this.search();
             });
         }
+
+        if (followersCard) {
+            followersCard.addEventListener('click', () => this.showFollowers());
+        }
+
+        if (closeFollowersModal) {
+            closeFollowersModal.addEventListener('click', () => this.hideFollowersModal());
+        }
+
+        if (backToProfile) {
+            backToProfile.addEventListener('click', () => this.hideFollowersModal());
+        }
+
+        // Close modal when clicking outside
+        document.addEventListener('click', (e) => {
+            const modal = document.getElementById('followersModal');
+            if (modal && !modal.contains(e.target) && !followersCard.contains(e.target)) {
+                this.hideFollowersModal();
+            }
+        });
     }
 
     /**
@@ -109,6 +132,19 @@ class GitHubVisualizer {
         
         if (!response.ok) {
             throw new Error('Failed to fetch repositories');
+        }
+        
+        return response.json();
+    }
+
+    /**
+     * Fetch user followers from GitHub API
+     */
+    async fetchFollowers(username) {
+        const response = await fetch(`${this.apiBase}/users/${username}/followers?per_page=100`);
+        
+        if (!response.ok) {
+            throw new Error('Failed to fetch followers');
         }
         
         return response.json();
@@ -483,6 +519,121 @@ class GitHubVisualizer {
     }
 
     /**
+     * Show followers modal and fetch followers
+     */
+    async showFollowers() {
+        if (!this.currentUsername) {
+            this.showError('No user profile loaded');
+            return;
+        }
+
+        this.showFollowersModal();
+        this.showFollowersLoading();
+
+        try {
+            const followers = await this.fetchFollowers(this.currentUsername);
+            this.displayFollowers(followers);
+        } catch (error) {
+            console.error('Error fetching followers:', error);
+            this.displayFollowersError();
+        } finally {
+            this.hideFollowersLoading();
+        }
+    }
+
+    /**
+     * Display followers in the modal
+     */
+    displayFollowers(followers) {
+        const followersList = document.getElementById('followersList');
+        if (!followersList) return;
+
+        if (followers.length === 0) {
+            followersList.innerHTML = `
+                <div class="col-span-full text-center py-8 text-gray-500">
+                    <i class="fas fa-users text-4xl mb-4"></i>
+                    <p>No followers found</p>
+                </div>
+            `;
+            return;
+        }
+
+        followersList.innerHTML = followers.map(follower => this.createFollowerCard(follower)).join('');
+    }
+
+    /**
+     * Create follower card HTML
+     */
+    createFollowerCard(follower) {
+        return `
+            <div class="bg-gray-50 rounded-lg p-4 border border-gray-200 hover:shadow-md transition-shadow cursor-pointer" onclick="window.githubVisualizer.analyzeUser('${follower.login}')">
+                <div class="flex items-center gap-3">
+                    <img src="${follower.avatar_url}" alt="${follower.login}" 
+                         class="w-12 h-12 rounded-full border-2 border-gray-300">
+                    <div class="flex-1">
+                        <h3 class="font-semibold text-gray-800 hover:text-blue-600 transition-colors">
+                            ${follower.login}
+                        </h3>
+                        <p class="text-sm text-gray-600">
+                            ${follower.name || 'No name available'}
+                        </p>
+                        <div class="flex gap-3 text-xs text-gray-500 mt-1">
+                            <span><i class="fas fa-users"></i> ${follower.followers || 0}</span>
+                            <span><i class="fas fa-code-branch"></i> ${follower.public_repos || 0}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    /**
+     * Analyze a specific user (from follower click)
+     */
+    async analyzeUser(username) {
+        this.hideFollowersModal();
+        document.getElementById('usernameInput').value = username;
+        await this.search();
+    }
+
+    /**
+     * Display followers error message
+     */
+    displayFollowersError() {
+        const followersList = document.getElementById('followersList');
+        if (followersList) {
+            followersList.innerHTML = `
+                <div class="col-span-full text-center py-8 text-red-500">
+                    <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                    <p>Failed to load followers</p>
+                    <button onclick="window.githubVisualizer.showFollowers()" class="mt-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Try Again
+                    </button>
+                </div>
+            `;
+        }
+    }
+
+    /**
+     * Modal UI state management
+     */
+    showFollowersModal() {
+        this.toggleElement('followersModal', false);
+    }
+
+    hideFollowersModal() {
+        this.toggleElement('followersModal', true);
+    }
+
+    showFollowersLoading() {
+        this.toggleElement('followersLoading', false);
+    }
+
+    hideFollowersLoading() {
+        this.toggleElement('followersLoading', true);
+    }
+
+    /**
      * Handle errors gracefully
      */
     handleError(error) {
@@ -548,7 +699,7 @@ class GitHubVisualizer {
 
 // Initialize the application when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
-    new GitHubVisualizer();
+    window.githubVisualizer = new GitHubVisualizer();
 });
 
 // Export for testing or module usage
